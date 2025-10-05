@@ -18,7 +18,7 @@ jobs:
       CCACHE_HARDLINK: "true"
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         submodules: 'true'
         fetch-depth: 100
@@ -66,7 +66,7 @@ jobs:
 
 
     - name: Upload BYD-Kernel
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: Mi8_sdm845-BYD_Kernel-${{ steps.get_time.outputs.TIME }}
         path: "tools/AnyKernel3/*"
