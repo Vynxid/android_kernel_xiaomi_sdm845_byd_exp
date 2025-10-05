@@ -1,26 +1,23 @@
 name: Build BYD-Kernel For Xiaomi 8 EE & UD
+
 on:
   workflow_dispatch:
-  schedule:
-      # Run once at 12:00 on Saturday.. See http://crontab.guru
-      - cron: '00 12 * * 6'
   push:
     branches:
-      - HEAD
-  pull_request:
-      branches:
       - HEAD
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
-    env:
-      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
-      CCACHE_NOHASHDIR: "true"
-      CCACHE_MAXSIZE: "2G"
-      CCACHE_HARDLINK: "true"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        attempt: [1, 2, 3]  # auto retry sampai 3x jika runner gagal
+
     steps:
-    - name: Checkout
+    - name: Checkout source
       uses: actions/checkout@v3
       with:
         submodules: 'true'
@@ -34,22 +31,17 @@ jobs:
         sudo apt-get update -y 
         sudo apt install binutils make python2 libssl-dev flex unzip libssl-dev ca-certificates xz-utils mkbootimg cpio device-tree-compiler git git-lfs bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev adb fastboot -y
         git clone https://github.com/kdrag0n/proton-clang.git
-    
-    - name: GetTime
+
+    - name: Get current time
       id: get_time
       run: |
-        echo "TIME=$(TZ=UTC-8 date +%m%d%H%M )" >> $GITHUB_OUTPUT
+        echo "TIME=$(TZ=UTC-8 date +%m%d%H%M)" >> $GITHUB_OUTPUT
 
-    - name: Free Disk Space (Ubuntu)
+    - name: Free Disk Space
       uses: jlumbroso/free-disk-space@v1.3.1
       with:
-        # this might remove tools that are actually needed,
-        # if set to "true" but frees about 6 GB
         tool-cache: false
-
-        # all of these default to true, but feel free to set to
-        # "false" if necessary for your workflow
-        android: false # I need android tools
+        android: false
         dotnet: true
         haskell: true
         large-packages: true
@@ -58,18 +50,26 @@ jobs:
 
     - name: Build Kernel
       run: |
-       rm -rf .git
-       sudo ln -sf /usr/bin/python2.7 /usr/bin/python
-       bash sync_wireguard.sh
-       bash syncanykernel3.sh
-       curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s nongki
-       bash build_kernel_byd_git_clang.sh
-       rm -rf tools/AnyKernel3/.git
-       rm -rf tools/AnyKernel3/.github
+        echo "=== Build attempt #${{ matrix.attempt }} ==="
+        rm -rf .git
+        sudo ln -sf /usr/bin/python2.7 /usr/bin/python
+        bash sync_wireguard.sh || true
+        bash syncanykernel3.sh || true
+        curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s nongki
+        bash build_kernel_byd_git_clang.sh || exit 1
+        rm -rf tools/AnyKernel3/.git
+        rm -rf tools/AnyKernel3/.github
 
-
-    - name: Upload BYD-Kernel
+    - name: Upload BYD-Kernel Artifact
+      if: success()
       uses: actions/upload-artifact@v3
       with:
         name: Mi8_sdm845-BYD_Kernel-${{ steps.get_time.outputs.TIME }}
         path: "tools/AnyKernel3/*"
+
+    - name: Retry on failure
+      if: failure() && matrix.attempt < 3
+      run: |
+        echo "Build failed on attempt #${{ matrix.attempt }}, retrying in 60 seconds..."
+        sleep 60
+        exit 1
